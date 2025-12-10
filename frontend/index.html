@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Contacts</title>
+  <title>通讯录 Contacts</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <header class="topbar">
-    <h1>Contacts</h1>
+    <h1>通讯录 Contacts</h1>
     <div class="actions">
       <input id="searchInput" type="search" placeholder="Search contacts..." />
       <label class="fav-filter">
-        <input id="favOnly" type="checkbox" /> Favorites only
+        <input id="favOnly" type="checkbox" /> 仅收藏(书签)
       </label>
-      <button id="addBtn">Add Contact</button>
+      <button id="addBtn">添加</button>
     </div>
   </header>
 
@@ -27,27 +27,64 @@
     </div>
   </main>
 
-  <div id="modal" class="modal hidden">
+  <!-- 添加/编辑联系人的模态框 -->
+  <div id="editModal" class="modal hidden">
     <div class="dialog">
-      <h3 id="modalTitle">Add Contact</h3>
+      <h3 id="modalTitle">Add</h3>
       <label>
-        Name
+        姓名 Name
         <input id="nameInput" type="text" placeholder="Enter name" />
       </label>
       <label>
-        Phone
+        电话 Phone
         <input id="phoneInput" type="text" placeholder="Enter phone number" />
       </label>
       <label>
-        Email (Optional)
+        邮箱 Email (Optional)
         <input id="emailInput" type="text" placeholder="Enter email" />
       </label>
+      <label>
+        社交账号 Social Account (Optional)
+        <input id="socialInput" type="text" placeholder="Enter social media username" />
+      </label>
+      <label>
+        地址 Address (Optional)
+        <input id="addressInput" type="text" placeholder="Enter address" />
+      </label>
       <label class="fav-row">
-        <input id="favoriteInput" type="checkbox" /> Add to favorites
+        <input id="favoriteInput" type="checkbox" /> 收藏
       </label>
       <div class="dialog-actions">
-        <button id="cancelBtn">Cancel</button>
-        <button id="saveBtn">Save</button>
+        <button id="cancelBtn">取消</button>
+        <button id="saveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 显示详细信息的模态框 -->
+  <div id="detailModal" class="modal hidden">
+    <div class="dialog">
+      <h3 id="detailTitle">Details</h3>
+      <div class="detail-info">
+        <div class="detail-row">
+          <span class="detail-label">Phone:</span>
+          <span id="detailPhone" class="detail-value"></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Email:</span>
+          <span id="detailEmail" class="detail-value"></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Social Account:</span>
+          <span id="detailSocial" class="detail-value"></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Address:</span>
+          <span id="detailAddress" class="detail-value"></span>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button id="closeDetailBtn">关闭</button>
       </div>
     </div>
   </div>

@@ -26,10 +26,10 @@ const API = {
     });
     return { data: json.data, total: json.total, page: json.page, pageSize: json.pageSize };
   },
-  create: async ({ name, phone, email = "", favorite = false }) => {
+  create: async ({ name, phone, email = "", socialAccount = "", address = "", favorite = false }) => {
     const json = await request("/api/contacts", {
       method: "POST",
-      body: { name, phone, email, favorite }
+      body: { name, phone, email, socialAccount, address, favorite }
     });
     return json.data;
   },
@@ -46,7 +46,6 @@ const API = {
   }
 };
 
-
 const state = {
   q: "",
   favoriteOnly: false,
@@ -56,6 +55,7 @@ const state = {
   items: []
 };
 
+// 主页面元素
 const listEl = document.getElementById("list");
 const pageInfoEl = document.getElementById("pageInfo");
 const prevBtn = document.getElementById("prevBtn");
@@ -64,46 +64,81 @@ const searchInput = document.getElementById("searchInput");
 const favOnlyEl = document.getElementById("favOnly");
 const addBtn = document.getElementById("addBtn");
 
-const modal = document.getElementById("modal");
+// 编辑模态框元素
+const editModal = document.getElementById("editModal");
 const modalTitle = document.getElementById("modalTitle");
 const nameInput = document.getElementById("nameInput");
 const phoneInput = document.getElementById("phoneInput");
 const emailInput = document.getElementById("emailInput");
+const socialInput = document.getElementById("socialInput");
+const addressInput = document.getElementById("addressInput");
 const favoriteInput = document.getElementById("favoriteInput");
 const cancelBtn = document.getElementById("cancelBtn");
 const saveBtn = document.getElementById("saveBtn");
 
+// 详情模态框元素
+const detailModal = document.getElementById("detailModal");
+const detailTitle = document.getElementById("detailTitle");
+const detailPhone = document.getElementById("detailPhone");
+const detailEmail = document.getElementById("detailEmail");
+const detailSocial = document.getElementById("detailSocial");
+const detailAddress = document.getElementById("detailAddress");
+const closeDetailBtn = document.getElementById("closeDetailBtn");
+
 let editingId = null;
 
-function openModal({ title, data } = {}) {
+// 打开编辑模态框
+function openEditModal({ title, data } = {}) {
   modalTitle.textContent = title || "Add Contact";
   nameInput.value = data?.name ?? "";
   phoneInput.value = data?.phone ?? "";
   emailInput.value = data?.email ?? "";
+  socialInput.value = data?.socialAccount ?? "";
+  addressInput.value = data?.address ?? "";
   favoriteInput.checked = !!data?.favorite;
-  modal.classList.remove("hidden");
+  editModal.classList.remove("hidden");
   nameInput.focus();
 }
-function closeModal() {
-  modal.classList.add("hidden");
+
+// 关闭编辑模态框
+function closeEditModal() {
+  editModal.classList.add("hidden");
   editingId = null;
 }
 
+// 打开详情模态框
+function openDetailModal(contact) {
+  detailTitle.textContent = `${contact.name}'s Details`;
+  detailPhone.textContent = contact.phone || "Not provided";
+  detailEmail.textContent = contact.email || "Not provided";
+  detailSocial.textContent = contact.socialAccount || "Not provided";
+  detailAddress.textContent = contact.address || "Not provided";
+  detailModal.classList.remove("hidden");
+}
+
+// 关闭详情模态框
+function closeDetailModal() {
+  detailModal.classList.add("hidden");
+}
+
+// 渲染联系人列表
 function renderList() {
   listEl.innerHTML = "";
   state.items.forEach(item => {
     const li = document.createElement("li");
     li.className = "card";
 
+    // 姓名
     const title = document.createElement("h4");
     title.textContent = item.name || "Unnamed";
 
+    // 更新时间
     const meta = document.createElement("div");
     meta.className = "meta";
     const dt = new Date(item.updatedAt || Date.now());
     meta.textContent = `Updated: ${dt.toLocaleString()}`;
 
-    // 第一行：电话和收藏状态
+    // 电话行（仅显示电话）
     const row1 = document.createElement("div");
     row1.className = "row";
     
@@ -113,44 +148,32 @@ function renderList() {
     
     const favPill = document.createElement("span");
     favPill.className = "pill";
-    favPill.textContent = item.favorite ? "★ Favorited" : "☆ Not Favorited";
+    favPill.textContent = item.favorite ? "★" : "☆";
     favPill.style.backgroundColor = item.favorite ? "#fffacd" : "#fff";
     
     row1.appendChild(phonePill);
     row1.appendChild(favPill);
 
-    // 第二行：邮箱（如果有）
-    const row2 = document.createElement("div");
-    row2.className = "row";
-    row2.style.marginTop = "4px";
-    row2.style.marginBottom = "8px";
-    
-    if (item.email && item.email.trim() !== "") {
-      const emailPill = document.createElement("span");
-      emailPill.className = "pill email-pill";
-      emailPill.textContent = `Email: ${item.email}`;
-      emailPill.style.backgroundColor = "#e8f5e9";
-      row2.appendChild(emailPill);
-    } else {
-      // 如果没有邮箱，创建一个空占位符以保持布局一致
-      const emptyPill = document.createElement("span");
-      emptyPill.className = "pill empty-email";
-      emptyPill.textContent = "Email: Not provided";
-      emptyPill.style.backgroundColor = "#f5f5f5";
-      emptyPill.style.color = "#999";
-      row2.appendChild(emptyPill);
-    }
-
     // 操作按钮行
     const ops = document.createElement("div");
     ops.className = "ops";
+    
+    // 显示更多按钮
+    const showMoreBtn = document.createElement("button");
+    showMoreBtn.className = "info";
+    showMoreBtn.textContent = "Show More";
+    showMoreBtn.onclick = () => openDetailModal(item);
+    
+    // 编辑按钮
     const editBtn = document.createElement("button");
     editBtn.className = "primary";
     editBtn.textContent = "Edit";
     editBtn.onclick = () => {
       editingId = item.id;
-      openModal({ title: "Edit Contact", data: item });
+      openEditModal({ title: "Edit Contact", data: item });
     };
+    
+    // 删除按钮
     const delBtn = document.createElement("button");
     delBtn.textContent = "Delete";
     delBtn.onclick = async () => {
@@ -158,14 +181,17 @@ function renderList() {
       await API.remove(item.id);
       await refresh();
     };
+    
+    // 收藏/取消收藏按钮
     const toggleFavBtn = document.createElement("button");
-    toggleFavBtn.textContent = item.favorite ? "Remove Favorite" : "Add to Favorite";
+    toggleFavBtn.textContent = item.favorite ? "Unfavorite" : "Favorite";
     toggleFavBtn.style.backgroundColor = item.favorite ? "#ffcccb" : "#e6f7ff";
     toggleFavBtn.onclick = async () => {
       await API.update(item.id, { favorite: !item.favorite });
       await refreshKeepingPage();
     };
 
+    ops.appendChild(showMoreBtn);
     ops.appendChild(editBtn);
     ops.appendChild(delBtn);
     ops.appendChild(toggleFavBtn);
@@ -174,7 +200,6 @@ function renderList() {
     li.appendChild(title);
     li.appendChild(meta);
     li.appendChild(row1);
-    li.appendChild(row2);
     li.appendChild(ops);
     
     listEl.appendChild(li);
@@ -215,18 +240,31 @@ async function refreshKeepingPage() {
   renderList();
 }
 
-
+// 事件监听器
 addBtn.onclick = () => {
   editingId = null;
-  openModal({ title: "Add Contact" });
+  openEditModal({ title: "Add Contact" });
 };
 
-cancelBtn.onclick = () => closeModal();
+cancelBtn.onclick = () => closeEditModal();
+
+closeDetailBtn.onclick = () => closeDetailModal();
+
+// 点击模态框外部关闭
+editModal.onclick = (e) => {
+  if (e.target === editModal) closeEditModal();
+};
+
+detailModal.onclick = (e) => {
+  if (e.target === detailModal) closeDetailModal();
+};
 
 saveBtn.onclick = async () => {
   const name = nameInput.value.trim();
   const phone = phoneInput.value.trim();
   const email = emailInput.value.trim();
+  const socialAccount = socialInput.value.trim();
+  const address = addressInput.value.trim();
   const favorite = !!favoriteInput.checked;
 
   if (!name || !phone) {
@@ -235,11 +273,11 @@ saveBtn.onclick = async () => {
   }
 
   if (editingId) {
-    await API.update(editingId, { name, phone, email, favorite });
+    await API.update(editingId, { name, phone, email, socialAccount, address, favorite });
   } else {
-    await API.create({ name, phone, email, favorite });
+    await API.create({ name, phone, email, socialAccount, address, favorite });
   }
-  closeModal();
+  closeEditModal();
   await refresh();
 };
 
@@ -266,4 +304,5 @@ nextBtn.onclick = async () => {
   await refreshKeepingPage();
 };
 
+// 初始加载
 refresh();
