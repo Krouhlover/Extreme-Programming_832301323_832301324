@@ -16,7 +16,6 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   
-  // 预检请求处理
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -52,28 +51,26 @@ const saveData = (data) => {
   }
 };
 
-// 获取联系人列表（支持搜索、筛选、分页）
+// 获取联系人列表
 app.get('/api/contacts', (req, res) => {
   const { q = '', favoriteOnly = '0', page = '1', pageSize = '8' } = req.query;
   const contacts = readData();
   
-  // 过滤数据
   let filtered = contacts.filter(contact => {
-    // 搜索过滤（支持姓名、电话、邮箱搜索）
     const searchLower = q.toLowerCase();
     const matchesSearch = !q || 
       contact.name.toLowerCase().includes(searchLower) ||
       (contact.phone && contact.phone.includes(q)) ||
-      (contact.email && contact.email.toLowerCase().includes(searchLower));
+      (contact.email && contact.email.toLowerCase().includes(searchLower)) ||
+      (contact.socialAccount && contact.socialAccount.toLowerCase().includes(searchLower)) ||
+      (contact.address && contact.address.toLowerCase().includes(searchLower));
     
-    // 收藏过滤
     const matchesFavorite = favoriteOnly === '0' || 
       (favoriteOnly === '1' && contact.favorite === true);
     
     return matchesSearch && matchesFavorite;
   });
   
-  // 分页
   const pageNum = parseInt(page);
   const size = parseInt(pageSize);
   const startIndex = (pageNum - 1) * size;
@@ -90,7 +87,14 @@ app.get('/api/contacts', (req, res) => {
 
 // 创建新联系人
 app.post('/api/contacts', (req, res) => {
-  const { name, phone, email = '', favorite = false } = req.body;
+  const { 
+    name, 
+    phone, 
+    email = '', 
+    socialAccount = '', 
+    address = '', 
+    favorite = false 
+  } = req.body;
   
   if (!name || !phone) {
     return res.status(400).json({ success: false, message: 'Name and phone are required' });
@@ -102,6 +106,8 @@ app.post('/api/contacts', (req, res) => {
     name,
     phone,
     email: email.trim(),
+    socialAccount: socialAccount.trim(),
+    address: address.trim(),
     favorite: Boolean(favorite),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -128,16 +134,20 @@ app.patch('/api/contacts/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Contact not found' });
   }
   
-  // 更新联系人信息
   const updatedContact = {
     ...contacts[index],
     ...updates,
     updatedAt: new Date().toISOString()
   };
   
-  // 清理email字段的空格
   if (updatedContact.email !== undefined) {
     updatedContact.email = updatedContact.email.trim();
+  }
+  if (updatedContact.socialAccount !== undefined) {
+    updatedContact.socialAccount = updatedContact.socialAccount.trim();
+  }
+  if (updatedContact.address !== undefined) {
+    updatedContact.address = updatedContact.address.trim();
   }
   
   contacts[index] = updatedContact;
@@ -167,9 +177,7 @@ app.delete('/api/contacts/:id', (req, res) => {
   }
 });
 
-// 启动服务器
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
   console.log(`Data file saved at: ${DATA_FILE}`);
-  console.log('Frontend API accessible at http://localhost:3000');
 });
