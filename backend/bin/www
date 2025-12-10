@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+// backend/bin/www
+// 作用：仅引导加载 server.js，监听逻辑在 server.js 内。
+// 适用于现有 server.js 已包含 app.listen(...) 的情况。
+
+import dotenv from "dotenv";
+dotenv.config();
+
+import "../src/server.js";

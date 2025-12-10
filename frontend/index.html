@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Contacts</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Contacts</h1>
+    <div class="actions">
+      <input id="searchInput" type="search" placeholder="Search contacts..." />
+      <label class="fav-filter">
+        <input id="favOnly" type="checkbox" /> Favorites only
+      </label>
+      <button id="addBtn">Add Contact</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <ul id="list" class="list"></ul>
+    <div class="pagination">
+      <button id="prevBtn"><</button>
+      <span id="pageInfo"></span>
+      <button id="nextBtn">></button>
+    </div>
+  </main>
+
+  <div id="modal" class="modal hidden">
+    <div class="dialog">
+      <h3 id="modalTitle">Add Contact</h3>
+      <label>
+        Name
+        <input id="nameInput" type="text" placeholder="Enter name" />
+      </label>
+      <label>
+        Phone
+        <input id="phoneInput" type="text" placeholder="Enter phone number" />
+      </label>
+      <label>
+        Email (Optional)
+        <input id="emailInput" type="text" placeholder="Enter email" />
+      </label>
+      <label class="fav-row">
+        <input id="favoriteInput" type="checkbox" /> Add to favorites
+      </label>
+      <div class="dialog-actions">
+        <button id="cancelBtn">Cancel</button>
+        <button id="saveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
