@@ -47,23 +47,30 @@ function readExcelFile(file) {
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
         
         // 转换数据格式
-        const contacts = jsonData.map(row => ({
+        const contacts = jsonData.map((row, index) => ({
           name: row['姓名'] || row['Name'] || '',
           phone: row['电话'] || row['Phone'] || '',
           email: row['邮箱'] || row['Email'] || row['邮箱地址'] || '',
           socialAccount: row['社交账号'] || row['Social Account'] || '',
           address: row['地址'] || row['Address'] || '',
           favorite: row['收藏'] === '是' || row['Favorite'] === true || false
-        })).filter(contact => contact.name && contact.phone);
+        })).filter(contact => {
+          // 过滤无效数据
+          const isValid = contact.name && contact.phone;
+          if (!isValid) {
+            console.warn(`跳过无效数据行: ${JSON.stringify(contact)}`);
+          }
+          return isValid;
+        });
         
         resolve(contacts);
       } catch (error) {
-        reject(new Error('Failed to parse Excel file: ' + error.message));
+        reject(new Error('解析Excel文件失败: ' + error.message));
       }
     };
     
     reader.onerror = function() {
-      reject(new Error('Failed to read file'));
+      reject(new Error('读取文件失败'));
     };
     
     reader.readAsArrayBuffer(file);
@@ -159,13 +166,20 @@ let editingId = null;
 function createImportExportButtons() {
   const topbar = document.querySelector('.topbar .actions');
   
+  // 模板下载按钮
+  const templateBtn = document.createElement('button');
+  templateBtn.id = 'templateBtn';
+  templateBtn.textContent = '下载模板';
+  templateBtn.style.backgroundColor = '#6c757d';
+  templateBtn.style.borderColor = '#6c757d';
+  templateBtn.style.marginLeft = 'auto';
+  
   // 导出按钮
   const exportBtn = document.createElement('button');
   exportBtn.id = 'exportBtn';
   exportBtn.textContent = '导出 Excel';
   exportBtn.style.backgroundColor = '#28a745';
   exportBtn.style.borderColor = '#28a745';
-  exportBtn.style.marginLeft = 'auto';
   
   // 导入按钮
   const importBtn = document.createElement('button');
@@ -182,19 +196,78 @@ function createImportExportButtons() {
   importFileInput.style.display = 'none';
   
   // 插入到页面
+  topbar.appendChild(templateBtn);
   topbar.appendChild(exportBtn);
   topbar.appendChild(importBtn);
   document.body.appendChild(importFileInput);
   
   // 添加事件监听
+  templateBtn.onclick = downloadTemplate;
   exportBtn.onclick = handleExport;
   importBtn.onclick = () => importFileInput.click();
   importFileInput.onchange = handleImport;
 }
 
+// 下载导入模板
+function downloadTemplate() {
+  try {
+    // 创建模板数据
+    const templateData = [
+      {
+        '姓名': '张三',
+        '电话': '13800138000',
+        '邮箱': 'zhangsan@example.com',
+        '社交账号': '@zhangsan',
+        '地址': '北京市朝阳区',
+        '收藏': '否'
+      },
+      {
+        '姓名': '李四',
+        '电话': '13900139000',
+        '邮箱': 'lisi@example.com',
+        '社交账号': '@lisi',
+        '地址': '上海市浦东新区',
+        '收藏': '是'
+      }
+    ];
+    
+    // 创建工作表
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '模板');
+    
+    // 设置列宽
+    const colWidths = [
+      { wch: 15 }, // 姓名
+      { wch: 15 }, // 电话
+      { wch: 25 }, // 邮箱
+      { wch: 15 }, // 社交账号
+      { wch: 25 }, // 地址
+      { wch: 10 }  // 收藏
+    ];
+    worksheet['!cols'] = colWidths;
+    
+    // 生成文件
+    const excelBuffer = XLSX.write(workbook, { 
+      bookType: 'xlsx', 
+      type: 'array' 
+    });
+    
+    // 下载文件
+    downloadExcel(excelBuffer, '通讯录导入模板.xlsx');
+    
+    alert('模板下载成功！请按照模板格式填写数据。\n\n注意事项：\n1. "姓名"和"电话"为必填项\n2. 电话重复的联系人不会被导入\n3. 收藏列填写"是"或"否"');
+    
+  } catch (error) {
+    console.error('Download template error:', error);
+    alert('下载模板失败: ' + error.message);
+  }
+}
+
 // 处理导出
 async function handleExport() {
   try {
+    const exportBtn = document.getElementById('exportBtn');
     exportBtn.disabled = true;
     exportBtn.textContent = '导出中...';
     await API.export();
@@ -203,8 +276,11 @@ async function handleExport() {
     console.error('Export error:', error);
     alert('导出失败: ' + error.message);
   } finally {
-    exportBtn.disabled = false;
-    exportBtn.textContent = '导出 Excel';
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) {
+      exportBtn.disabled = false;
+      exportBtn.textContent = '导出 Excel';
+    }
   }
 }
 
@@ -221,7 +297,7 @@ async function handleImport(event) {
     }
     
     // 确认导入
-    if (!confirm(`确定要导入文件 "${file.name}" 吗？这将更新现有联系人或添加新联系人。`)) {
+    if (!confirm(`确定要导入文件 "${file.name}" 吗？\n\n注意：仅会添加新联系人，不会覆盖现有联系人。`)) {
       event.target.value = '';
       return;
     }
@@ -230,18 +306,26 @@ async function handleImport(event) {
     const contacts = await readExcelFile(file);
     
     if (contacts.length === 0) {
-      alert('Excel文件中没有找到有效的联系人数据');
+      alert('Excel文件中没有找到有效的联系人数据（需要姓名和电话）');
       return;
     }
     
-    // 显示导入确认信息
-    const confirmMsg = `找到 ${contacts.length} 个联系人\n\n` +
-      `示例数据：\n` +
-      `姓名：${contacts[0].name}\n` +
-      `电话：${contacts[0].phone}\n\n` +
-      `确认导入吗？`;
+    // 显示导入预览
+    let previewMessage = `找到 ${contacts.length} 个联系人\n\n`;
+    previewMessage += `前5个联系人预览：\n\n`;
     
-    if (!confirm(confirmMsg)) {
+    // 显示前5个联系人作为预览
+    contacts.slice(0, 5).forEach((contact, index) => {
+      previewMessage += `${index + 1}. ${contact.name} - ${contact.phone}\n`;
+    });
+    
+    if (contacts.length > 5) {
+      previewMessage += `... 还有 ${contacts.length - 5} 个联系人\n`;
+    }
+    
+    previewMessage += `\n确认导入吗？`;
+    
+    if (!confirm(previewMessage)) {
       event.target.value = '';
       return;
     }
@@ -249,13 +333,28 @@ async function handleImport(event) {
     // 执行导入
     const result = await API.import(contacts);
     
-    alert(`导入完成！\n` +
-      `新增：${result.data.imported} 个\n` +
-      `更新：${result.data.updated} 个\n` +
-      `错误：${result.data.errors} 个`);
-    
-    // 刷新列表
-    await refresh();
+    if (result.success) {
+      // 显示详细的导入结果
+      let resultMessage = `导入完成！\n`;
+      resultMessage += `✓ 成功导入: ${result.data.imported} 个\n`;
+      
+      if (result.data.duplicates > 0) {
+        resultMessage += `⚠ 跳过重复: ${result.data.duplicates} 个（电话已存在）\n`;
+      }
+      
+      if (result.data.errors > 0) {
+        resultMessage += `✗ 错误: ${result.data.errors} 个\n`;
+      }
+      
+      alert(resultMessage);
+      
+      // 如果成功导入了新联系人，刷新列表
+      if (result.data.imported > 0) {
+        await refresh();
+      }
+    } else {
+      throw new Error(result.message || '导入失败');
+    }
     
   } catch (error) {
     console.error('Import error:', error);

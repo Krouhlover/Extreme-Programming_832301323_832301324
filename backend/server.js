@@ -230,7 +230,7 @@ app.get('/api/contacts/export', (req, res) => {
   }
 });
 
-// 从 Excel 导入联系人
+// 从 Excel 导入联系人 - 只添加新联系人，不更新已有联系人
 app.post('/api/contacts/import', (req, res) => {
   try {
     if (!req.body || !req.body.data) {
@@ -241,7 +241,7 @@ app.post('/api/contacts/import', (req, res) => {
     const importedData = req.body.data;
     
     let importedCount = 0;
-    let updatedCount = 0;
+    let duplicateCount = 0;
     let errorCount = 0;
     
     importedData.forEach(item => {
@@ -252,58 +252,68 @@ app.post('/api/contacts/import', (req, res) => {
         }
         
         // 检查是否已存在相同电话的联系人
-        const existingIndex = contacts.findIndex(c => c.phone === item.phone);
+        const existingContact = contacts.find(c => c.phone === item.phone);
         
-        if (existingIndex !== -1) {
-          // 更新现有联系人
-          contacts[existingIndex] = {
-            ...contacts[existingIndex],
-            name: item.name || contacts[existingIndex].name,
-            email: item.email || contacts[existingIndex].email,
-            socialAccount: item.socialAccount || contacts[existingIndex].socialAccount,
-            address: item.address || contacts[existingIndex].address,
-            favorite: item.favorite || contacts[existingIndex].favorite,
-            updatedAt: new Date().toISOString()
-          };
-          updatedCount++;
-        } else {
-          // 添加新联系人
-          const newContact = {
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-            name: item.name,
-            phone: item.phone,
-            email: item.email ? item.email.trim() : '',
-            socialAccount: item.socialAccount ? item.socialAccount.trim() : '',
-            address: item.address ? item.address.trim() : '',
-            favorite: Boolean(item.favorite),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          };
-          contacts.push(newContact);
-          importedCount++;
+        if (existingContact) {
+          // 跳过重复的电话号码，只统计但不添加
+          duplicateCount++;
+          console.log(`跳过重复联系人: ${item.name} (电话: ${item.phone})`);
+          return;
         }
+        
+        // 添加新联系人
+        const newContact = {
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          name: item.name,
+          phone: item.phone,
+          email: item.email ? item.email.trim() : '',
+          socialAccount: item.socialAccount ? item.socialAccount.trim() : '',
+          address: item.address ? item.address.trim() : '',
+          favorite: Boolean(item.favorite),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        contacts.push(newContact);
+        importedCount++;
+        
+        console.log(`成功导入联系人: ${item.name} (电话: ${item.phone})`);
+        
       } catch (err) {
         errorCount++;
         console.error('Error processing row:', err);
       }
     });
     
-    if (saveData(contacts)) {
+    if (importedCount > 0 || duplicateCount > 0) {
+      // 只有有新联系人时才保存
+      if (saveData(contacts)) {
+        res.json({ 
+          success: true, 
+          message: `导入完成: ${importedCount} 个成功导入, ${duplicateCount} 个重复跳过, ${errorCount} 个错误`,
+          data: {
+            imported: importedCount,
+            duplicates: duplicateCount,
+            errors: errorCount
+          }
+        });
+      } else {
+        res.status(500).json({ success: false, message: '保存导入数据失败' });
+      }
+    } else {
       res.json({ 
         success: true, 
-        message: `Import completed: ${importedCount} imported, ${updatedCount} updated, ${errorCount} errors`,
+        message: `没有新数据导入: ${duplicateCount} 个重复, ${errorCount} 个错误`,
         data: {
           imported: importedCount,
-          updated: updatedCount,
+          duplicates: duplicateCount,
           errors: errorCount
         }
       });
-    } else {
-      res.status(500).json({ success: false, message: 'Failed to save imported data' });
     }
   } catch (error) {
     console.error('Import error:', error);
-    res.status(500).json({ success: false, message: 'Failed to import data' });
+    res.status(500).json({ success: false, message: '导入数据失败: ' + error.message });
   }
 });
 
