@@ -19,6 +19,57 @@ async function request(path, { method = "GET", query, body } = {}) {
   return json;
 }
 
+// 下载 Excel 文件
+function downloadExcel(data, filename) {
+  const blob = new Blob([data], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'contacts.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
+// 读取 Excel 文件
+function readExcelFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        
+        // 转换数据格式
+        const contacts = jsonData.map(row => ({
+          name: row['姓名'] || row['Name'] || '',
+          phone: row['电话'] || row['Phone'] || '',
+          email: row['邮箱'] || row['Email'] || row['邮箱地址'] || '',
+          socialAccount: row['社交账号'] || row['Social Account'] || '',
+          address: row['地址'] || row['Address'] || '',
+          favorite: row['收藏'] === '是' || row['Favorite'] === true || false
+        })).filter(contact => contact.name && contact.phone);
+        
+        resolve(contacts);
+      } catch (error) {
+        reject(new Error('Failed to parse Excel file: ' + error.message));
+      }
+    };
+    
+    reader.onerror = function() {
+      reject(new Error('Failed to read file'));
+    };
+    
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 const API = {
   list: async ({ q = "", favoriteOnly = false, page = 1, pageSize = 8 }) => {
     const json = await request("/api/contacts", {
@@ -43,6 +94,23 @@ const API = {
   remove: async (id) => {
     await request(`/api/contacts/${id}`, { method: "DELETE" });
     return true;
+  },
+  // 导出联系人
+  export: async () => {
+    const response = await fetch(`${BASE_URL}/api/contacts/export`);
+    if (!response.ok) {
+      throw new Error('Failed to export contacts');
+    }
+    const blob = await response.blob();
+    downloadExcel(await blob.arrayBuffer(), `contacts_${new Date().toISOString().slice(0,10)}.xlsx`);
+  },
+  // 导入联系人
+  import: async (data) => {
+    const json = await request("/api/contacts/import", {
+      method: "POST",
+      body: { data }
+    });
+    return json;
   }
 };
 
@@ -86,6 +154,116 @@ const detailAddress = document.getElementById("detailAddress");
 const closeDetailBtn = document.getElementById("closeDetailBtn");
 
 let editingId = null;
+
+// 创建导入导出按钮
+function createImportExportButtons() {
+  const topbar = document.querySelector('.topbar .actions');
+  
+  // 导出按钮
+  const exportBtn = document.createElement('button');
+  exportBtn.id = 'exportBtn';
+  exportBtn.textContent = '导出 Excel';
+  exportBtn.style.backgroundColor = '#28a745';
+  exportBtn.style.borderColor = '#28a745';
+  exportBtn.style.marginLeft = 'auto';
+  
+  // 导入按钮
+  const importBtn = document.createElement('button');
+  importBtn.id = 'importBtn';
+  importBtn.textContent = '导入 Excel';
+  importBtn.style.backgroundColor = '#17a2b8';
+  importBtn.style.borderColor = '#17a2b8';
+  
+  // 导入文件输入
+  const importFileInput = document.createElement('input');
+  importFileInput.id = 'importFileInput';
+  importFileInput.type = 'file';
+  importFileInput.accept = '.xlsx,.xls';
+  importFileInput.style.display = 'none';
+  
+  // 插入到页面
+  topbar.appendChild(exportBtn);
+  topbar.appendChild(importBtn);
+  document.body.appendChild(importFileInput);
+  
+  // 添加事件监听
+  exportBtn.onclick = handleExport;
+  importBtn.onclick = () => importFileInput.click();
+  importFileInput.onchange = handleImport;
+}
+
+// 处理导出
+async function handleExport() {
+  try {
+    exportBtn.disabled = true;
+    exportBtn.textContent = '导出中...';
+    await API.export();
+    alert('导出成功！');
+  } catch (error) {
+    console.error('Export error:', error);
+    alert('导出失败: ' + error.message);
+  } finally {
+    exportBtn.disabled = false;
+    exportBtn.textContent = '导出 Excel';
+  }
+}
+
+// 处理导入
+async function handleImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  try {
+    // 检查文件类型
+    if (!file.name.match(/\.(xlsx|xls)$/)) {
+      alert('请选择Excel文件 (.xlsx 或 .xls)');
+      return;
+    }
+    
+    // 确认导入
+    if (!confirm(`确定要导入文件 "${file.name}" 吗？这将更新现有联系人或添加新联系人。`)) {
+      event.target.value = '';
+      return;
+    }
+    
+    // 读取并解析Excel文件
+    const contacts = await readExcelFile(file);
+    
+    if (contacts.length === 0) {
+      alert('Excel文件中没有找到有效的联系人数据');
+      return;
+    }
+    
+    // 显示导入确认信息
+    const confirmMsg = `找到 ${contacts.length} 个联系人\n\n` +
+      `示例数据：\n` +
+      `姓名：${contacts[0].name}\n` +
+      `电话：${contacts[0].phone}\n\n` +
+      `确认导入吗？`;
+    
+    if (!confirm(confirmMsg)) {
+      event.target.value = '';
+      return;
+    }
+    
+    // 执行导入
+    const result = await API.import(contacts);
+    
+    alert(`导入完成！\n` +
+      `新增：${result.data.imported} 个\n` +
+      `更新：${result.data.updated} 个\n` +
+      `错误：${result.data.errors} 个`);
+    
+    // 刷新列表
+    await refresh();
+    
+  } catch (error) {
+    console.error('Import error:', error);
+    alert('导入失败: ' + error.message);
+  } finally {
+    event.target.value = '';
+  }
+}
 
 // 打开编辑模态框
 function openEditModal({ title, data } = {}) {
@@ -305,4 +483,5 @@ nextBtn.onclick = async () => {
 };
 
 // 初始加载
+createImportExportButtons();
 refresh();

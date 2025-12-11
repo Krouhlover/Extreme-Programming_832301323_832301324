@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import XLSX from 'xlsx'; // 添加 Excel 处理库
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -174,6 +175,135 @@ app.delete('/api/contacts/:id', (req, res) => {
     res.json({ success: true });
   } else {
     res.status(500).json({ success: false, message: 'Failed to delete data' });
+  }
+});
+
+// 导出所有联系人为 Excel
+app.get('/api/contacts/export', (req, res) => {
+  try {
+    const contacts = readData();
+    
+    // 准备 Excel 数据
+    const worksheetData = contacts.map(contact => ({
+      '姓名': contact.name,
+      '电话': contact.phone,
+      '邮箱': contact.email || '',
+      '社交账号': contact.socialAccount || '',
+      '地址': contact.address || '',
+      '收藏': contact.favorite ? '是' : '否',
+      '创建时间': new Date(contact.createdAt).toLocaleString(),
+      '更新时间': new Date(contact.updatedAt).toLocaleString()
+    }));
+    
+    // 创建工作簿和工作表
+    const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
+    
+    // 设置列宽
+    const colWidths = [
+      { wch: 20 }, // 姓名
+      { wch: 15 }, // 电话
+      { wch: 25 }, // 邮箱
+      { wch: 20 }, // 社交账号
+      { wch: 30 }, // 地址
+      { wch: 10 }, // 收藏
+      { wch: 20 }, // 创建时间
+      { wch: 20 }  // 更新时间
+    ];
+    worksheet['!cols'] = colWidths;
+    
+    // 生成 Excel 文件
+    const excelBuffer = XLSX.write(workbook, { 
+      bookType: 'xlsx', 
+      type: 'buffer' 
+    });
+    
+    // 设置响应头
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=contacts.xlsx');
+    
+    res.send(excelBuffer);
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ success: false, message: 'Failed to export data' });
+  }
+});
+
+// 从 Excel 导入联系人
+app.post('/api/contacts/import', (req, res) => {
+  try {
+    if (!req.body || !req.body.data) {
+      return res.status(400).json({ success: false, message: 'No data provided' });
+    }
+    
+    const contacts = readData();
+    const importedData = req.body.data;
+    
+    let importedCount = 0;
+    let updatedCount = 0;
+    let errorCount = 0;
+    
+    importedData.forEach(item => {
+      try {
+        if (!item.name || !item.phone) {
+          errorCount++;
+          return;
+        }
+        
+        // 检查是否已存在相同电话的联系人
+        const existingIndex = contacts.findIndex(c => c.phone === item.phone);
+        
+        if (existingIndex !== -1) {
+          // 更新现有联系人
+          contacts[existingIndex] = {
+            ...contacts[existingIndex],
+            name: item.name || contacts[existingIndex].name,
+            email: item.email || contacts[existingIndex].email,
+            socialAccount: item.socialAccount || contacts[existingIndex].socialAccount,
+            address: item.address || contacts[existingIndex].address,
+            favorite: item.favorite || contacts[existingIndex].favorite,
+            updatedAt: new Date().toISOString()
+          };
+          updatedCount++;
+        } else {
+          // 添加新联系人
+          const newContact = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            name: item.name,
+            phone: item.phone,
+            email: item.email ? item.email.trim() : '',
+            socialAccount: item.socialAccount ? item.socialAccount.trim() : '',
+            address: item.address ? item.address.trim() : '',
+            favorite: Boolean(item.favorite),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          contacts.push(newContact);
+          importedCount++;
+        }
+      } catch (err) {
+        errorCount++;
+        console.error('Error processing row:', err);
+      }
+    });
+    
+    if (saveData(contacts)) {
+      res.json({ 
+        success: true, 
+        message: `Import completed: ${importedCount} imported, ${updatedCount} updated, ${errorCount} errors`,
+        data: {
+          imported: importedCount,
+          updated: updatedCount,
+          errors: errorCount
+        }
+      });
+    } else {
+      res.status(500).json({ success: false, message: 'Failed to save imported data' });
+    }
+  } catch (error) {
+    console.error('Import error:', error);
+    res.status(500).json({ success: false, message: 'Failed to import data' });
   }
 });
 

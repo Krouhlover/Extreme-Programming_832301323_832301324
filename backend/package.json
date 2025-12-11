@@ -1,10 +1,12 @@
 {
-  "name": "assign1-num-832301323",
+  "name": "contacts-app",
+  "version": "1.0.0",
   "type": "module",
+  "dependencies": {
+    "express": "^4.18.2",
+    "xlsx": "^0.18.5"
+  },
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2"
   }
 }
