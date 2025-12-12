@@ -38,4 +38,4 @@ INSERT INTO contacts (name, phone, email, social_account, address, favorite) VAL
 ('张三', '13800138000', 'zhangsan@example.com', '@zhangsan', '北京市朝阳区', true),
 ('李四', '13900139000', 'lisi@example.com', '@lisi', '上海市浦东新区', false),
 ('王五', '13700137000', 'wangwu@example.com', '@wangwu', '广州市天河区', true),
-('赵六', '13600136000', 'zhaoliu@example.com', '@zhaoliu', '深圳市南山区', false);contacts
+('赵六', '13600136000', 'zhaoliu@example.com', '@zhaoliu', '深圳市南山区', false);

@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: contact_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: contact_db
+      MYSQL_USER: contact_app
+      MYSQL_PASSWORD: contact_password
+      # 设置默认字符集为 utf8mb4
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/init_database_docker.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - contact_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 后端服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contact_backend
+    environment:
+      DB_HOST: mysql
+      DB_USER: contact_app
+      DB_PASSWORD: contact_password
+      DB_NAME: contact_db
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - contact_network
+    restart: unless-stopped
+
+  # 前端服务（通过 nginx 提供）
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: contact_frontend
+    networks:
+      - contact_network
+    restart: unless-stopped
+
+  # Nginx 反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: contact_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - contact_network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+
+networks:
+  contact_network:
+    driver: bridge
+

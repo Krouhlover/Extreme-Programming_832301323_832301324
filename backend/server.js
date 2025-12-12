@@ -11,16 +11,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-// MySQL数据库配置
+// MySQL数据库配置（支持环境变量，兼容 Docker）
 const dbConfig = {
-  host: 'localhost',
-  user: 'contact_app',
-  password: 'contact_password', // 改为您设置的密码
-  database: 'contact_db',
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'contact_app',
+  password: process.env.DB_PASSWORD || 'contact_password',
+  database: process.env.DB_NAME || 'contact_db',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  decimalNumbers: true
+  decimalNumbers: true,
+  // 设置字符集为 utf8mb4（支持完整的 UTF-8，包括中文和 emoji）
+  charset: 'utf8mb4'
 };
 
 // 创建数据库连接池
@@ -34,6 +36,10 @@ async function initDatabase() {
     // 测试连接
     const connection = await pool.getConnection();
     console.log('✅ MySQL数据库连接成功');
+    
+    // 设置连接字符集为 utf8mb4
+    await connection.query('SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci');
+    await connection.query('SET CHARACTER SET utf8mb4');
     
     // 测试查询确保表存在
     const [rows] = await connection.query('SHOW TABLES LIKE "contacts"');

@@ -1,17 +1,105 @@
 // app.js
-const BASE_URL = "http://localhost:3000";
+// 支持多种环境：
+// 1. Docker 生产环境：通过 Nginx 访问（端口 80），支持域名和 IP 访问
+// 2. 本地开发环境：直接访问后端（端口 3000）
+function getBaseUrl() {
+  const port = window.location.port;
+  const hostname = window.location.hostname;
+  
+  // 如果是端口 80 或没有端口（默认 80），使用当前 origin（通过 Nginx）
+  // 支持域名访问（如 http://example.com）和 IP 访问（如 http://123.456.789.012）
+  if (port === "" || port === "80") {
+    return window.location.origin;  // 例如: http://localhost, http://example.com, http://123.456.789.012
+  }
+  
+  // 本地开发模式（非 80 端口），直接访问后端
+  // 但如果是 localhost 或 127.0.0.1，使用本地后端
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://localhost:3000";
+  }
+  
+  // 其他情况（可能是通过其他端口访问的 IP 或域名），使用当前 origin
+  return window.location.origin;
+}
+
+// 获取并验证 BASE_URL
+function getValidBaseUrl() {
+  let baseUrl = getBaseUrl();
+  
+  // 验证 baseUrl 是否有效
+  if (!baseUrl || typeof baseUrl !== 'string' || baseUrl.trim() === '') {
+    console.warn('BASE_URL 无效，使用 window.location.origin 作为后备');
+    baseUrl = window.location.origin;
+  }
+  
+  // 确保 baseUrl 是有效的 URL
+  try {
+    new URL('/', baseUrl);
+  } catch (e) {
+    console.warn('BASE_URL 不是有效的 URL，使用 window.location.origin 作为后备:', baseUrl, e);
+    baseUrl = window.location.origin;
+  }
+  
+  // 最终验证：如果还是无效，使用默认值
+  if (!baseUrl || baseUrl === 'null' || baseUrl === 'undefined') {
+    baseUrl = window.location.origin || 'http://localhost';
+  }
+  
+  console.log('使用的 BASE_URL:', baseUrl);
+  return baseUrl;
+}
+
+const BASE_URL = getValidBaseUrl();
 
 // 改进的请求函数，增加重试和错误处理
 async function request(path, { method = "GET", query, body, retries = 3 } = {}) {
-  const url = new URL(path, BASE_URL);
+  // 确保 path 是字符串且以 / 开头
+  if (typeof path !== 'string') {
+    path = String(path);
+  }
+  if (!path.startsWith('/')) {
+    path = '/' + path;
+  }
+  
+  // 构建完整 URL，使用多重后备方案
+  let url;
+  let baseUrl = BASE_URL;
+  
+  // 如果 BASE_URL 无效，使用 window.location.origin
+  if (!baseUrl || baseUrl === 'null' || baseUrl === 'undefined' || baseUrl.trim() === '') {
+    baseUrl = window.location.origin || 'http://localhost';
+  }
+  
+  // 确保 baseUrl 是有效的 URL 格式
+  if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+    baseUrl = window.location.protocol + '//' + (baseUrl.startsWith('//') ? baseUrl.substring(2) : baseUrl);
+  }
+  
+  // 使用简单的字符串拼接构建 URL（避免 new URL() 可能的问题）
+  // 这样更可靠，适用于所有环境（IP、域名、localhost）
+  let finalUrl;
+  try {
+    // 确保 baseUrl 不以 / 结尾，path 以 / 开头
+    const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    finalUrl = cleanBase + path;
+  } catch (e) {
+    // 如果字符串拼接也失败，使用相对路径
+    console.warn('URL 拼接失败，使用相对路径:', e);
+    finalUrl = path;
+  }
   
   // 添加查询参数
   if (query) {
+    const params = new URLSearchParams();
     Object.entries(query).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") {
-        url.searchParams.set(k, String(v));
+        params.set(k, String(v));
       }
     });
+    const queryString = params.toString();
+    if (queryString) {
+      finalUrl += (finalUrl.includes('?') ? '&' : '?') + queryString;
+    }
   }
   
   // 配置请求选项
@@ -32,9 +120,9 @@ async function request(path, { method = "GET", query, body, retries = 3 } = {}) 
   // 重试机制
   for (let i = 0; i < retries; i++) {
     try {
-      console.log(`请求: ${method} ${url.toString()}`, body ? `数据: ${JSON.stringify(body)}` : '');
+      console.log(`请求: ${method} ${finalUrl}`, body ? `数据: ${JSON.stringify(body)}` : '');
       
-      const res = await fetch(url.toString(), options);
+      const res = await fetch(finalUrl, options);
       
       // 尝试解析JSON响应
       let json;
@@ -68,7 +156,13 @@ async function request(path, { method = "GET", query, body, retries = 3 } = {}) 
       
     } catch (error) {
       lastError = error;
-      console.error(`请求错误 (尝试 ${i + 1}/${retries}):`, error.message);
+      console.error(`请求错误 (尝试 ${i + 1}/${retries}):`, error.message, 'URL:', finalUrl);
+      
+      // 如果是 URL 构造错误，不再重试
+      if (error.message && (error.message.includes('Invalid base URL') || error.message.includes('Failed to construct'))) {
+        console.error('URL 构造错误，停止重试。BASE_URL:', BASE_URL, 'window.location:', window.location);
+        throw new Error('URL 构造失败: ' + error.message + '。请检查 BASE_URL 配置。');
+      }
       
       // 如果不是最后一次尝试，等待后重试
       if (i < retries - 1) {
@@ -280,7 +374,11 @@ const API = {
   // 导出联系人
   export: async () => {
     try {
-      const response = await fetch(`${BASE_URL}/api/contacts/export`);
+      // 构建导出 URL
+      const exportUrl = BASE_URL.endsWith('/') 
+        ? `${BASE_URL}api/contacts/export`
+        : `${BASE_URL}/api/contacts/export`;
+      const response = await fetch(exportUrl);
       
       if (!response.ok) {
         const errorText = await response.text();
